@@ -2,74 +2,25 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from ta_py import rsi, sma
+from ta_py import rsi, sma, macd
 
-# 1. Page Setup
-st.set_page_config(page_title="Pocket Research", layout="wide")
-st.title("📈 Pocket Research Tool")
+# ... (keep your existing setup and fetch functions)
 
-# 2. Fetch Master List from Dhan
-@st.cache_data
-def get_nse_instruments():
-    url = "https://images.dhan.co/api-data/api-scrip-master.csv"
-    df = pd.read_csv(url)
-    nse_df = df[(df['SEM_EXM_EXCH_ID'] == 'NSE') & (df['SEM_SEGMENT'] == 'E')].copy()
-    nse_df['yfinance_ticker'] = nse_df['SEM_TRADING_SYMBOL'] + '.NS'
-    return nse_df
-
-# Helper function to pad indicator results to match dataframe length
-def pad_indicator(indicator_values, total_length):
-    diff = total_length - len(indicator_values)
-    return [np.nan] * diff + indicator_values
-
-instruments_df = get_nse_instruments()
-
-# 3. Sidebar
-st.sidebar.header("Filter Scrips")
-stock_options = instruments_df['SEM_CUSTOM_SYMBOL'].dropna().astype(str).tolist()
-selected_names = st.sidebar.multiselect("Select Stocks to Analyze:", options=stock_options)
-
-# 4. Main Analysis
-if selected_names:
-    for name in selected_names:
-        row = instruments_df[instruments_df['SEM_CUSTOM_SYMBOL'] == name]
-        if not row.empty:
-            ticker = row.iloc[0]['yfinance_ticker']
-            
-            with st.expander(f"Analysis for {name}", expanded=False):
-                try:
-                    # Download data
-                    data = yf.download(ticker, period="1y", progress=False)
-                    
-                    if not data.empty:
-                        # Flatten MultiIndex columns to handle yfinance output
-                        data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
-                        
-                        df = data.copy()
-                        # Extract list for ta-py functions
-                        close_prices = df['Close'].squeeze().tolist()
-                        
-                        # Calculate indicators with padding
-                        df['RSI_14'] = pad_indicator(rsi(close_prices, 14), len(df))
-                        df['SMA_50'] = pad_indicator(sma(close_prices, 50), len(df))
-                        df['SMA_200'] = pad_indicator(sma(close_prices, 200), len(df))
-                        
-                        # Display Data Safely
-                        latest_price = float(df['Close'].iloc[-1])
-                        latest_rsi = df['RSI_14'].iloc[-1]
-                        
-                        st.write(f"**Latest Price:** ₹{latest_price:.2f}")
-                        
-                        # Use list of column names for charting
-                        st.line_chart(df[['Close', 'SMA_50', 'SMA_200']])
-                        
-                        if not np.isnan(latest_rsi):
-                            st.write(f"**RSI (14):** {latest_rsi:.2f}")
-                        else:
-                            st.write("**RSI (14):** Calculating...")
-                    else:
-                        st.warning("No data found.")
-                except Exception as e:
-                    st.error(f"Error: {e}")
-else:
-    st.info("Select stocks from the sidebar to begin.")
+# 5. New Scanner Feature
+st.sidebar.markdown("---")
+st.sidebar.subheader("🚀 Quick Scanner")
+if st.sidebar.button("Run Bullish Scanner"):
+    with st.spinner("Scanning NSE stocks..."):
+        bullish_list = []
+        # We limit to first 20 for speed in the browser
+        for ticker in instruments_df['yfinance_ticker'].head(20): 
+            data = fetch_stock_data(ticker)
+            if not data.empty:
+                data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
+                close = data['Close'].squeeze().tolist()
+                sma_200 = sma(close, 200)[-1]
+                if data['Close'].iloc[-1] > sma_200:
+                    bullish_list.append(ticker)
+        
+        st.write("### 🟢 Bullish Stocks (Above SMA 200)")
+        st.write(bullish_list)
