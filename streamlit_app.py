@@ -2,42 +2,58 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-# 1. Page Setup
-st.set_page_config(page_title="My Stock Tool", layout="wide")
-st.title("📈 Pocket Stock Research")
+# 1. Fetch Master List from Dhan
+@st.cache_data
+def get_nse_instruments():
+    # Dhan's master CSV URL
+    url = "https://images.dhan.co/api-data/api-scrip-master.csv"
+    df = pd.read_csv(url)
+    # Filter for NSE Equity only
+    nse_df = df[(df['SEM_EXM_EXCH_ID'] == 'NSE') & (df['SEM_SEGMENT'] == 'E')].copy()
+    
+    # yfinance needs the symbol with '.NS' appended
+    nse_df['yfinance_ticker'] = nse_df['SEM_TRADING_SYMBOL'] + '.NS'
+    return nse_df
 
-# 2. Define the Watchlist (This is where you add/remove stocks)
-# You can change the stocks in the list below anytime
-default_stocks = ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS"]
+# Load the data
+instruments_df = get_nse_instruments()
 
-st.sidebar.header("Settings")
-selected_stocks = st.sidebar.multiselect(
-    "Select Scrips to Analyze:",
-    options=["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ITC.NS", "WIPRO.NS", "SBIN.NS"],
-    default=default_stocks
+st.set_page_config(page_title="Pocket Research", layout="wide")
+st.title("📈 Pocket Research Tool")
+
+# 2. Sidebar: Searchable Dropdown
+st.sidebar.header("Filter Scrips")
+# Let the user pick by the "Custom Symbol" (e.g., RELIANCE)
+selected_names = st.sidebar.multiselect(
+    "Select Stocks to Analyze:",
+    options=instruments_df['SEM_CUSTOM_SYMBOL'].tolist(),
+    default=["RELIANCE", "TCS", "INFY"]
 )
 
-# 3. Analysis Logic
-st.write(f"Analyzing: {', '.join(selected_stocks)}")
-
-for ticker in selected_stocks:
-    with st.expander(f"Analysis for {ticker}", expanded=False):
-        try:
-            # Fetch data from Yahoo Finance
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period="1mo")
-            
-            # Display basic price info
-            latest_price = hist['Close'].iloc[-1]
-            st.write(f"**Latest Price:** ₹{latest_price:.2f}")
-            
-            # Show a simple chart
-            st.line_chart(hist['Close'])
-            
-            # Show some basic info
-            info = stock.info
-            st.write(f"**Market Cap:** {info.get('marketCap', 'N/A')}")
-            st.write(f"**P/E Ratio:** {info.get('trailingPE', 'N/A')}")
-            
-        except Exception as e:
-            st.error(f"Could not fetch data for {ticker}. Error: {e}")
+# 3. Main Dashboard Analysis
+if selected_names:
+    for name in selected_names:
+        # Get the corresponding yfinance ticker
+        row = instruments_df[instruments_df['SEM_CUSTOM_SYMBOL'] == name].iloc[0]
+        ticker = row['yfinance_ticker']
+        
+        with st.expander(f"Analysis for {name} ({ticker})", expanded=False):
+            try:
+                # Fetch Data
+                stock = yf.Ticker(ticker)
+                hist = stock.history(period="1mo")
+                
+                if not hist.empty:
+                    st.write(f"**Latest Price:** ₹{hist['Close'].iloc[-1]:.2f}")
+                    st.line_chart(hist['Close'])
+                    
+                    # Basic Financials
+                    info = stock.info
+                    st.write(f"**Market Cap:** {info.get('marketCap', 'N/A')}")
+                    st.write(f"**P/E Ratio:** {info.get('trailingPE', 'N/A')}")
+                else:
+                    st.warning("No historical data found for this symbol.")
+            except Exception as e:
+                st.error(f"Error fetching data: {e}")
+else:
+    st.info("Select stocks from the sidebar to begin analysis.")
