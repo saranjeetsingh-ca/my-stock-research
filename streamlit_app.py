@@ -50,7 +50,9 @@ if selected_names:
                         df['SMA_200'] = pad_indicator(sma(close_prices, 200), len(df))
                         
                         latest = df.iloc[-1]
-                        st.write(f"**Latest Price:** ₹{latest['Close']:.2f}")
+                        # Ensure we take the specific value from the row
+                        latest_price = float(latest['Close'])
+                        st.write(f"**Latest Price:** ₹{latest_price:.2f}")
                         st.line_chart(df[['Close', 'SMA_50', 'SMA_200']])
                         
                         st.write(f"**RSI (14):** {latest['RSI_14']:.2f}")
