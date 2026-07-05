@@ -40,7 +40,11 @@ if selected_names:
                 try:
                     # Download data
                     data = yf.download(ticker, period="1y", progress=False)
+                    
                     if not data.empty:
+                        # Flatten MultiIndex columns to handle yfinance output
+                        data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
+                        
                         df = data.copy()
                         # Extract list for ta-py functions
                         close_prices = df['Close'].squeeze().tolist()
@@ -55,6 +59,8 @@ if selected_names:
                         latest_rsi = df['RSI_14'].iloc[-1]
                         
                         st.write(f"**Latest Price:** ₹{latest_price:.2f}")
+                        
+                        # Use list of column names for charting
                         st.line_chart(df[['Close', 'SMA_50', 'SMA_200']])
                         
                         if not np.isnan(latest_rsi):
