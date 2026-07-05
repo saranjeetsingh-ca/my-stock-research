@@ -3,12 +3,6 @@ import yfinance as yf
 import pandas as pd
 from ta_py import rsi, sma
 
-# Then, update the calculation part inside your expander:
-# Instead of: df.ta.rsi(...) 
-# Use the ta-py functions directly on your data:
-df['RSI_14'] = rsi(df['Close'].tolist(), 14)
-df['SMA_50'] = sma(df['Close'].tolist(), 50)
-df['SMA_200'] = sma(df['Close'].tolist(), 200)
 # 1. Page Setup
 st.set_page_config(page_title="Pocket Research", layout="wide")
 st.title("📈 Pocket Research Tool")
@@ -38,22 +32,27 @@ if selected_names:
             
             with st.expander(f"Analysis for {name}", expanded=False):
                 try:
-                    df = yf.download(ticker, period="6mo", progress=False)
-                    if not df.empty:
-                        # Technical Analysis Calculations
-                        df.ta.rsi(length=14, append=True)
-                        df.ta.sma(length=50, append=True)
-                        df.ta.sma(length=200, append=True)
+                    # Download data
+                    data = yf.download(ticker, period="6mo", progress=False)
+                    
+                    # FIX: Check if data is valid before creating 'df'
+                    if not data.empty:
+                        df = data.copy() # Now 'df' is defined safely
+                        
+                        # Calculate indicators
+                        # Note: ta-py expects lists
+                        close_prices = df['Close'].squeeze().tolist()
+                        df['RSI_14'] = rsi(close_prices, 14)
+                        df['SMA_50'] = sma(close_prices, 50)
+                        df['SMA_200'] = sma(close_prices, 200)
                         
                         latest = df.iloc[-1]
                         st.write(f"**Latest Price:** ₹{latest['Close']:.2f}")
                         st.line_chart(df[['Close', 'SMA_50', 'SMA_200']])
                         
-                        # Technical Summary
                         rsi_val = latest['RSI_14']
-                        st.write(f"**RSI (14):** {rsi_val:.2f} | **Status:** {'Overbought' if rsi_val > 70 else 'Oversold' if rsi_val < 30 else 'Neutral'}")
-                        st.write(f"**SMA 50:** {latest['SMA_50']:.2f} | **SMA 200:** {latest['SMA_200']:.2f}")
+                        st.write(f"**RSI (14):** {rsi_val:.2f}")
                     else:
-                        st.warning("No data found.")
+                        st.warning("No data found for this ticker.")
                 except Exception as e:
                     st.error(f"Error calculating indicators: {e}")
