@@ -1,8 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
-
+import pandas_ta_classic as ta
 # 1. Page Setup
 st.set_page_config(page_title="Pocket Research", layout="wide")
 st.title("📈 Pocket Research Tool")
