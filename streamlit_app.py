@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 from ta_py import rsi, sma
 
 # 1. Page Setup
@@ -15,6 +16,12 @@ def get_nse_instruments():
     nse_df = df[(df['SEM_EXM_EXCH_ID'] == 'NSE') & (df['SEM_SEGMENT'] == 'E')].copy()
     nse_df['yfinance_ticker'] = nse_df['SEM_TRADING_SYMBOL'] + '.NS'
     return nse_df
+
+# Helper function to fix length mismatch
+def pad_indicator(indicator_values, total_length):
+    # If the indicator list is shorter, fill the beginning with NaNs
+    diff = total_length - len(indicator_values)
+    return [np.nan] * diff + indicator_values
 
 instruments_df = get_nse_instruments()
 
@@ -32,27 +39,22 @@ if selected_names:
             
             with st.expander(f"Analysis for {name}", expanded=False):
                 try:
-                    # Download data
-                    data = yf.download(ticker, period="6mo", progress=False)
-                    
-                    # FIX: Check if data is valid before creating 'df'
+                    data = yf.download(ticker, period="1y", progress=False)
                     if not data.empty:
-                        df = data.copy() # Now 'df' is defined safely
-                        
-                        # Calculate indicators
-                        # Note: ta-py expects lists
+                        df = data.copy()
                         close_prices = df['Close'].squeeze().tolist()
-                        df['RSI_14'] = rsi(close_prices, 14)
-                        df['SMA_50'] = sma(close_prices, 50)
-                        df['SMA_200'] = sma(close_prices, 200)
+                        
+                        # Apply indicators with padding
+                        df['RSI_14'] = pad_indicator(rsi(close_prices, 14), len(df))
+                        df['SMA_50'] = pad_indicator(sma(close_prices, 50), len(df))
+                        df['SMA_200'] = pad_indicator(sma(close_prices, 200), len(df))
                         
                         latest = df.iloc[-1]
                         st.write(f"**Latest Price:** ₹{latest['Close']:.2f}")
                         st.line_chart(df[['Close', 'SMA_50', 'SMA_200']])
                         
-                        rsi_val = latest['RSI_14']
-                        st.write(f"**RSI (14):** {rsi_val:.2f}")
+                        st.write(f"**RSI (14):** {latest['RSI_14']:.2f}")
                     else:
-                        st.warning("No data found for this ticker.")
+                        st.warning("No data found.")
                 except Exception as e:
-                    st.error(f"Error calculating indicators: {e}")
+                    st.error(f"Error: {e}")
