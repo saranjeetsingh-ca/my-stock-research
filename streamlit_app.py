@@ -17,9 +17,8 @@ def get_nse_instruments():
     nse_df['yfinance_ticker'] = nse_df['SEM_TRADING_SYMBOL'] + '.NS'
     return nse_df
 
-# Helper function to fix length mismatch
+# Helper function to pad indicator results to match dataframe length
 def pad_indicator(indicator_values, total_length):
-    # If the indicator list is shorter, fill the beginning with NaNs
     diff = total_length - len(indicator_values)
     return [np.nan] * diff + indicator_values
 
@@ -30,7 +29,7 @@ st.sidebar.header("Filter Scrips")
 stock_options = instruments_df['SEM_CUSTOM_SYMBOL'].dropna().astype(str).tolist()
 selected_names = st.sidebar.multiselect("Select Stocks to Analyze:", options=stock_options)
 
-# 4. Analysis
+# 4. Main Analysis
 if selected_names:
     for name in selected_names:
         row = instruments_df[instruments_df['SEM_CUSTOM_SYMBOL'] == name]
@@ -39,24 +38,32 @@ if selected_names:
             
             with st.expander(f"Analysis for {name}", expanded=False):
                 try:
+                    # Download data
                     data = yf.download(ticker, period="1y", progress=False)
                     if not data.empty:
                         df = data.copy()
+                        # Extract list for ta-py functions
                         close_prices = df['Close'].squeeze().tolist()
                         
-                        # Apply indicators with padding
+                        # Calculate indicators with padding
                         df['RSI_14'] = pad_indicator(rsi(close_prices, 14), len(df))
                         df['SMA_50'] = pad_indicator(sma(close_prices, 50), len(df))
                         df['SMA_200'] = pad_indicator(sma(close_prices, 200), len(df))
                         
-                        latest = df.iloc[-1]
-                        # Ensure we take the specific value from the row
-                        latest_price = float(latest['Close'])
+                        # Display Data Safely
+                        latest_price = float(df['Close'].iloc[-1])
+                        latest_rsi = df['RSI_14'].iloc[-1]
+                        
                         st.write(f"**Latest Price:** ₹{latest_price:.2f}")
                         st.line_chart(df[['Close', 'SMA_50', 'SMA_200']])
                         
-                        st.write(f"**RSI (14):** {latest['RSI_14']:.2f}")
+                        if not np.isnan(latest_rsi):
+                            st.write(f"**RSI (14):** {latest_rsi:.2f}")
+                        else:
+                            st.write("**RSI (14):** Calculating...")
                     else:
                         st.warning("No data found.")
                 except Exception as e:
                     st.error(f"Error: {e}")
+else:
+    st.info("Select stocks from the sidebar to begin.")
