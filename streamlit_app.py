@@ -1,7 +1,14 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta_classic as ta
+from ta_py import rsi, sma
+
+# Then, update the calculation part inside your expander:
+# Instead of: df.ta.rsi(...) 
+# Use the ta-py functions directly on your data:
+df['RSI_14'] = rsi(df['Close'].tolist(), 14)
+df['SMA_50'] = sma(df['Close'].tolist(), 50)
+df['SMA_200'] = sma(df['Close'].tolist(), 200)
 # 1. Page Setup
 st.set_page_config(page_title="Pocket Research", layout="wide")
 st.title("📈 Pocket Research Tool")
