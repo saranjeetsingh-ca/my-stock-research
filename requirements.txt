@@ -1,4 +1,5 @@
 streamlit
-yfinance
+feedparser
 pandas
-ta-py
+nltk
+requests
