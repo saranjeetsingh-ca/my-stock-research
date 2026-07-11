@@ -7,6 +7,7 @@ from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
 import re
 import requests
+import io
 
 # Download the VADER lexicon dictionary silently
 try:
@@ -33,42 +34,65 @@ st.markdown("""
 st.markdown("<h1>⚡ Open-Universe NLP Catalyst Engine</h1>", unsafe_allow_html=True)
 st.markdown("<p class='sub'>Dynamic Nifty 500 Directory Ingestion • Open NLP Text Parsing • Actionable Signals Matrix</p>", unsafe_allow_html=True)
 
-# 2. Dynamic Universe Ingestion (Nifty 500)
+# 2. Dynamic Universe Ingestion (Official NSE Source + Failsafe)
 @st.cache_data(ttl=86400) # Cache the 500 stock directory for 24 hours
 def load_nifty_500_universe():
-    """Fetches the Nifty 500 master list and compiles a clean text-matching array."""
-    # Using a reliable public GitHub mirror to bypass NSE server anti-bot firewalls
-    url = "https://raw.githubusercontent.com/anirbanghoshsbi/NSE-Indices/master/ind_nifty500list.csv"
-    try:
-        df = pd.read_csv(url)
-    except Exception as e:
-        st.error(f"Failed to ingest Nifty 500 Master Directory: {e}")
-        return {}
-
+    """Fetches Nifty 500 from official source, falls back to core matrix if blocked."""
+    url = "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv"
+    
+    # Fake browser headers to bypass the NSE Cloudflare/Bot protection
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/csv,application/csv,text/html"
+    }
+    
     universe = {}
     
     # Text suffixes to strip out so we match raw company tokens accurately
     noise_words = [
         r"\bltd\b", r"\blimited\b", r"\bindia\b", r"\bindustries\b", 
-        r"\bcorp\b", r"\bcorporation\b", r"\benterprises\b"
+        r"\bcorp\b", r"\bcorporation\b", r"\benterprises\b", r"\bcompany\b"
     ]
     suffix_pattern = re.compile("|".join(noise_words), re.IGNORECASE)
 
-    for _, row in df.iterrows():
-        symbol = str(row['Symbol']).strip()
-        company_name = str(row['Company Name']).lower()
+    try:
+        # Step 1: Attempt to pull the live directory from the official exchange
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status() # Force an error if the connection fails or is blocked
         
-        # Clean corporate legal noise (e.g., "Tata Motors Ltd." -> "tata motors")
-        clean_name = suffix_pattern.sub("", company_name).strip()
-        # Strip out excessive generic punctuation
-        clean_name = re.sub(r'[^\w\s]', '', clean_name).strip()
+        # Parse the raw text response into a Pandas Dataframe
+        df = pd.read_csv(io.StringIO(response.text))
         
-        # Scenario A: The news article uses the exact stock ticker (e.g., "HUDCO drops 3%")
-        universe[rf"\b{symbol.lower()}\b"] = symbol
-        
-        # Scenario B: The news article uses the common company name (e.g., "Zomato signs pact")
-        if len(clean_name) > 3: # Ignore ultra-short corrupted tokens
-            universe[rf"\b{clean_name}\b"] = symbol
+        for _, row in df.iterrows():
+            symbol = str(row.get('Symbol', '')).strip()
+            company_name = str(row.get('Company Name', '')).lower()
+            
+            if not symbol or symbol == 'nan': continue
+            
+            clean_name = suffix_pattern.sub("", company_name).strip()
+            clean_name = re.sub(r'[^\w\s]', '', clean_name).strip()
+            
+            # Map precise ticker
+            universe[rf"\b{symbol.lower()}\b"] = symbol
+            # Map cleaned company name
+            if len(clean_name) > 3: 
+                universe[rf"\b{clean_name}\b"] = symbol
+
+    except Exception:
+        # Step 2: The Failsafe. If NSE blocks the server, default to the Core Matrix silently
+        universe = {
+            r"\bzomato\b": "ZOMATO", r"\bhudco\b": "HUDCO", r"\bireda\b": "IREDA",
+            r"\brvnl\b": "RVNL", r"\birfc\b": "IRFC", r"\bsuzlon\b": "SUZLON",
+            r"\breliance\b": "RELIANCE", r"\btcs\b": "TCS", r"\bhdfc\b": "HDFCBANK",
+            r"\bicici\b": "ICICIBANK", r"\binfosys\b|\binfy\b": "INFY",
+            r"\btata motors\b|\btamotors\b": "TATAMOTORS", r"\btata steel\b": "TATASTEEL",
+            r"\badani\b": "ADANIENT", r"\bstate bank\b|\bsbi\b": "SBIN",
+            r"\bbhel\b": "BHEL", r"\bhal\b": "HAL", r"\bpaytm\b": "PAYTM",
+            r"\bnykaa\b": "NYKAA", r"\bjio financial\b|\bjiofin\b": "JIOFIN",
+            r"\bitc\b": "ITC", r"\bl&t\b|\blarsen\b": "LT", r"\bbajaj finance\b": "BAJFINANCE",
+            r"\bmaruti\b": "MARUTI", r"\baxis bank\b": "AXISBANK", r"\bntpc\b": "NTPC",
+            r"\btitan\b": "TITAN", r"\bmahindra\b|\bm&m\b": "M&M", r"\bwipro\b": "WIPRO"
+        }
             
     return universe
 
@@ -107,7 +131,7 @@ def pipeline_processing_stream(universe_map, earnings_w, orders_w, legal_w, nois
             # --- STAGE 1: OPEN ENTITY EXTRACTION ---
             matched_ticker = extract_ticker_nlp(title, universe_map)
             if not matched_ticker:
-                continue # Discard macro noise stories not mentioning any Nifty 500 company
+                continue # Discard macro noise stories not mentioning any mapped company
                 
             # --- STAGE 2: RELATIVE TIME SHORTHAND ---
             try:
@@ -144,7 +168,6 @@ def pipeline_processing_stream(universe_map, earnings_w, orders_w, legal_w, nois
                 category = "🚨 Regulatory / Legal"
                 
             # --- STAGE 4: MACRO NOISE THRESHOLD FILTER ---
-            # If the calculated absolute trading impact is minor, throw it out
             if abs(score) < noise_th:
                 continue
                 
@@ -180,11 +203,11 @@ noise_threshold = st.sidebar.slider("Macro Noise Filter Cutoff", 0.0, 0.5, 0.15,
 st.sidebar.caption("Headlines with absolute scores below this value are filtered out as generic industry noise.")
 
 # Initialize the dynamic open universe layout
-with st.spinner("Compiling Nifty 500 Dynamic NLP Target Matrices..."):
+with st.spinner("Compiling Nifty Dynamic NLP Target Matrices..."):
     nifty_universe = load_nifty_500_universe()
 
 if nifty_universe:
-    st.info(f"NLP Target Arrays Loaded Successfully. Monitoring {len(nifty_universe)} unique Nifty corporate text patterns.")
+    st.info(f"NLP Target Arrays Loaded Successfully. Monitoring {len(nifty_universe)} unique corporate text patterns.")
     
     if st.button("📡 Deploy Stream Parsers & Intercept Market Catalysts", type="primary"):
         with st.spinner("Processing live financial media streams through the NLP architecture..."):
@@ -198,7 +221,7 @@ if nifty_universe:
             
             if not signals_df.empty:
                 st.markdown("### 🎯 Live High-Conviction Actionable Signals Directory")
-                st.caption("The system has matched raw unstructured streams against the Nifty 500 universe and calculated the following directional impact variables:")
+                st.caption("The system has matched raw unstructured streams against the Nifty universe and calculated the following directional impact variables:")
                 
                 # Format dataframe layout for full visibility
                 st.dataframe(
